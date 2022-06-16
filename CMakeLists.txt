@@ -5,12 +5,4 @@ project(g600-mouse-controller)
 
 add_executable(${PROJECT_NAME} g600.c)
 
-message(${CMAKE_INSTALL_PREFIX})
-
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND sudo -A chown root: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${PROJECT_NAME}
-    COMMAND sudo -A chmod u+s ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${PROJECT_NAME}
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-
 install(TARGETS ${PROJECT_NAME} DESTINATION bin)

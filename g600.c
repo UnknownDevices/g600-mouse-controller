@@ -158,7 +158,7 @@ int main() {
     case 2:
       printf("Suggestion: Maybe the expected device prefix (%s) is wrong. "
              "Check whether a device with this prefix exists in %s and fix it "
-             "by editing \"g600.cpp\".\n",
+             "by editing \"g600.c\".\n",
              kPrefix, kDir);
       break;
     }

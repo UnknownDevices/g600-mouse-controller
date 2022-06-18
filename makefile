@@ -9,7 +9,7 @@ clean:
 	rm $(output_name)
 
 install:
-	mv $(output_name) $(install_dir)/$(output_name)
+	cp $(output_name) $(install_dir)/$(output_name)
 	chown :input $(install_dir)/$(output_name)
 
 uninstall:

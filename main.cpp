@@ -2,10 +2,24 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/input.h>
+#include <optional>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#define NSILENT_LOG(log_level, ...)                                            \
+  if (log_level > LogLevel::Silent)                                            \
+    printf(__VA_ARGS__);
+#define NQUIET_LOG(log_level, ...)                                             \
+  if (log_level > LogLevel::Quiet)                                             \
+    printf(__VA_ARGS__);
+
+enum class LogLevel {
+  Silent = 0,
+  Quiet = 1,
+  All = 2,
+};
 
 struct input_event events[64];
 const char kDir[] = "/dev/input/by-id/";
@@ -106,12 +120,12 @@ int ends_with(const char *haystack, const char *suffix) {
   size_t suffix_length = strlen(suffix), haystack_length = strlen(haystack);
   if (haystack_length < suffix_length)
     return 0;
-  size_t haystack_end = haystack + haystack_length - suffix_length;
+  const char *haystack_end = haystack + haystack_length - suffix_length;
   return strncmp(suffix, haystack_end, suffix_length) == 0;
 }
 
 // Returns non-0 on error.
-int find_g600(char *path) {
+int find_g600(char *path, const LogLevel log_level) {
   //*path = kDir;
   DIR *dir;
   struct dirent *ent;
@@ -123,7 +137,7 @@ int find_g600(char *path) {
       strcpy(path, kDir);
       strcat(path, ent->d_name);
 
-      printf("full path is %s\n", path);
+      NSILENT_LOG(log_level, "full path is %s\n", path);
 
       //*path += ent->d_name;
       closedir(dir);
@@ -134,49 +148,59 @@ int find_g600(char *path) {
   return 2;
 }
 
-int main() {
-  printf("Starting G600 Linux controller.\n\n");
-  printf("It's a good idea to configure G600 with Logitech Gaming Software "
-         "before running this program:\n");
-  printf(" - assign left, right, middle mouse button and vertical mouse wheel"
-         "to their normal functions\n");
-  printf(" - assign the G-Shift button to \"G-Shift\"\n");
-  printf(" - assign all other keys (including horizontal mouse wheel) to "
-         "arbitrary (unique) keyboard keys\n");
-  printf("\n");
+int main_loop(const LogLevel log_level) {
+  NSILENT_LOG(
+      log_level,
+      "Starting G600 Linux controller.\n"
+      "\n"
+      "It's a good idea to configure G600 with Logitech Gaming Software "
+      "before running this program:\n"
+      "Assign left, right, middle mouse button and vertical mouse wheel to "
+      "their normal functions\n"
+      " - assign the G-Shift button to \"G-Shift\"\n"
+      " - assign all other keys (including horizontal mouse wheel) to "
+      "arbitrary (unique) keyboard keys\n");
+
   char path[1024];
-  int find_error = find_g600(&path);
+  int find_error = find_g600(reinterpret_cast<char *>(&path), log_level);
   if (find_error) {
-    printf("Error: Couldn't find G600 input device.\n");
+    NSILENT_LOG(log_level, "Error: Couldn't find G600 input device.\n");
     switch (find_error) {
     case 1:
-      printf(
+      NSILENT_LOG(
+          log_level,
           "Suggestion: Maybe the expected directory (%s) is wrong. Check "
           "whether this directory exists and fix it by editing \"g600.c\".\n",
           kDir);
       break;
     case 2:
-      printf("Suggestion: Maybe the expected device prefix (%s) is wrong. "
-             "Check whether a device with this prefix exists in %s and fix it "
-             "by editing \"g600.c\".\n",
-             kPrefix, kDir);
+      NSILENT_LOG(
+          log_level,
+          "Suggestion: Maybe the expected device prefix (%s) is wrong. "
+          "Check whether a device with this prefix exists in %s and fix it "
+          "by editing \"g600.c\".\n",
+          kPrefix, kDir);
       break;
     }
-    printf("Suggestion: Maybe a permission is missing. Try running this "
-           "program with sudo.\n");
+    NSILENT_LOG(log_level,
+                "Suggestion: Maybe a permission is missing. Try running this "
+                "program with sudo.\n");
     return 1;
   }
+
   int fd = open(path, O_RDONLY);
   if (fd < 0) {
-    printf("Error: Couldn't open \"%s\" for reading.\n", path);
-    printf("Reason: %s.\n", strerror(errno));
-    printf("Suggestion: Maybe a permission is missing. Try running this "
-           "program with sudo.\n");
+    NSILENT_LOG(log_level,
+                "Error: Couldn't open \"%s\" for reading.\n"
+                "Reason: %s.\n"
+                "Suggestion: Maybe a permission is missing. Try running this "
+                "program with sudo.\n",
+                path, strerror(errno));
     return 1;
   }
 
   ioctl(fd, EVIOCGRAB, 1);
-  printf("G600 controller started successfully.\n\n");
+  NSILENT_LOG(log_level, "G600 controller started successfully.\n\n");
 
   int g_shift = 0;
   int prev_scancode = 0;
@@ -197,18 +221,17 @@ int main() {
     const int scancode = events[0].value & ~0x70000;
 
     if (scancode == 55) {
-      printf("\n");
-      printf("g-shift %s\n", pressed ? "on" : "off");
+      NQUIET_LOG(log_level, "\ng-shift %s\n", pressed ? "on" : "off");
 
       if (prev_pressed) {
         if (on_up_cmds[g_shift][prev_scancode]) {
-          printf("Executing: \"%s\"\n", on_up_cmds[g_shift][prev_scancode]);
+          NQUIET_LOG(log_level, "Executing: \"%s\"\n", on_up_cmds[g_shift][prev_scancode]);
           system(on_up_cmds[g_shift][prev_scancode]);
         }
 
         g_shift ^= 1;
         if (on_down_cmds[g_shift][prev_scancode]) {
-          printf("Executing: \"%s\"\n", on_down_cmds[g_shift][prev_scancode]);
+          NQUIET_LOG(log_level, "Executing: \"%s\"\n", on_down_cmds[g_shift][prev_scancode]);
           system(on_down_cmds[g_shift][prev_scancode]);
         }
       } else {
@@ -222,11 +245,21 @@ int main() {
     const char *cmd = pressed ? on_down_cmds[g_shift][scancode]
                               : on_up_cmds[g_shift][scancode];
     if (cmd) {
-      printf("\n");
-      printf("Executing: \"%s\"\n", cmd);
+      NQUIET_LOG(log_level, "\nExecuting: \"%s\"\n", cmd);
       system(cmd);
     }
   }
 
   close(fd);
+  return 0;
+}
+
+int main(int argc, char **argv) {
+  if (strcmp(argv[0], "--silent")) {
+    return main_loop(LogLevel::Silent);
+  } else if (strcmp(argv[0], "--quiet")) {
+    return main_loop(LogLevel::Quiet);
+  } else {
+    return main_loop(LogLevel::All);
+  }
 }

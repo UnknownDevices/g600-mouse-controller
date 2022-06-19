@@ -18,13 +18,8 @@
 enum class LogLevel {
   Silent = 0,
   Quiet = 1,
-  All = 2,
+  Full = 2,
 };
-
-struct input_event events[64];
-const char kDir[] = "/dev/input/by-id/";
-const char kPrefix[] = "usb-Logitech_Gaming_Mouse_G600_";
-const char kSuffix[] = "-if01-event-kbd";
 
 enum {
   G9 = 30,
@@ -46,9 +41,13 @@ enum {
   LAST_BUTTON = 55,
 };
 
-// ADD KEY->COMMAND MAPPINGS HERE:
+struct input_event events[64];
+const char kDir[] = "/dev/input/by-id/";
+const char kPrefix[] = "usb-Logitech_Gaming_Mouse_G600_";
+const char kSuffix[] = "-if01-event-kbd";
+
 const char *on_down_cmds[2][LAST_BUTTON + 1] = {
-    //[g-shift][scancode] = "command to run",
+    // [g-shift][scancode] = "command to run"
     [0][G9] = "xdotool keydown 1",
     [0][G10] = "xdotool keydown 2",
     [0][G11] = "xdotool keydown 3",
@@ -72,14 +71,12 @@ const char *on_down_cmds[2][LAST_BUTTON + 1] = {
     [1][G15] = "xdotool keydown Page_Up",
     [1][G16] = "xdotool keydown BackSpace",
     [1][G17] = "xdotool keydown Page_Down",
-    // [1][G18] = "",
     [1][G19] = "xdotool keydown Delete",
-    // [1][G20] = "",
     [1][HWHEEL_LEFT] = "xdotool keydown Ctrl+z",
     [1][HWHEEL_RIGHT] = "xdotool keydown Ctrl+y"};
 
 const char *on_up_cmds[2][LAST_BUTTON + 1] = {
-    //[g-shift][scancode] = "command to run",
+    // [g-shift][scancode] = "command to run"
     [0][G9] = "xdotool keyup 1",
     [0][G10] = "xdotool keyup 2",
     [0][G11] = "xdotool keyup 3",
@@ -103,9 +100,7 @@ const char *on_up_cmds[2][LAST_BUTTON + 1] = {
     [1][G15] = "xdotool keyup Page_Up",
     [1][G16] = "xdotool keyup BackSpace",
     [1][G17] = "xdotool keyup Page_Down",
-    // [1][G18] = "",
     [1][G19] = "xdotool keyup Delete",
-    // [1][G20] = "",
     [1][HWHEEL_LEFT] = "xdotool keyup Ctrl+z",
     [1][HWHEEL_RIGHT] = "xdotool keyup Ctrl+y"};
 
@@ -126,7 +121,6 @@ int ends_with(const char *haystack, const char *suffix) {
 
 // Returns non-0 on error.
 int find_g600(char *path, const LogLevel log_level) {
-  //*path = kDir;
   DIR *dir;
   struct dirent *ent;
   if (!(dir = opendir(kDir))) {
@@ -138,8 +132,6 @@ int find_g600(char *path, const LogLevel log_level) {
       strcat(path, ent->d_name);
 
       NSILENT_LOG(log_level, "full path is %s\n", path);
-
-      //*path += ent->d_name;
       closedir(dir);
       return 0;
     }
@@ -148,6 +140,7 @@ int find_g600(char *path, const LogLevel log_level) {
   return 2;
 }
 
+// Returns non-0 on error.
 int main_loop(const LogLevel log_level) {
   NSILENT_LOG(
       log_level,
@@ -205,10 +198,16 @@ int main_loop(const LogLevel log_level) {
   int g_shift = 0;
   int prev_scancode = 0;
   int prev_pressed = 0;
-  while (1) {
+  while (true) {
     size_t n = read(fd, events, sizeof(events));
-    if (n <= 0)
-      return 2;
+    if (n <= 0) {
+      NSILENT_LOG(log_level,
+                  "Error: Failed to read from \"%s\".\n"
+                  "Reason: %s.\n",
+                  path, strerror(errno));
+      return 1;
+    }
+
     if (n < sizeof(struct input_event) * 2)
       continue;
     if (events[0].type != 4)
@@ -222,16 +221,17 @@ int main_loop(const LogLevel log_level) {
 
     if (scancode == 55) {
       NQUIET_LOG(log_level, "\ng-shift %s\n", pressed ? "on" : "off");
-
       if (prev_pressed) {
         if (on_up_cmds[g_shift][prev_scancode]) {
-          NQUIET_LOG(log_level, "Executing: \"%s\"\n", on_up_cmds[g_shift][prev_scancode]);
+          NQUIET_LOG(log_level, "Executing: \"%s\"\n",
+                     on_up_cmds[g_shift][prev_scancode]);
           system(on_up_cmds[g_shift][prev_scancode]);
         }
 
         g_shift ^= 1;
         if (on_down_cmds[g_shift][prev_scancode]) {
-          NQUIET_LOG(log_level, "Executing: \"%s\"\n", on_down_cmds[g_shift][prev_scancode]);
+          NQUIET_LOG(log_level, "Executing: \"%s\"\n",
+                     on_down_cmds[g_shift][prev_scancode]);
           system(on_down_cmds[g_shift][prev_scancode]);
         }
       } else {
@@ -239,6 +239,7 @@ int main_loop(const LogLevel log_level) {
       }
       continue;
     }
+
     prev_pressed = pressed;
     prev_scancode = scancode;
 
@@ -249,17 +250,15 @@ int main_loop(const LogLevel log_level) {
       system(cmd);
     }
   }
-
+  
   close(fd);
   return 0;
 }
 
 int main(int argc, char **argv) {
-  if (strcmp(argv[0], "--silent")) {
-    return main_loop(LogLevel::Silent);
-  } else if (strcmp(argv[0], "--quiet")) {
-    return main_loop(LogLevel::Quiet);
-  } else {
-    return main_loop(LogLevel::All);
-  }
+  const LogLevel log_level = strcmp(argv[0], "--silent")  ? LogLevel::Silent
+                             : strcmp(argv[0], "--quiet") ? LogLevel::Quiet
+                                                          : LogLevel::Full;
+
+  return main_loop(log_level);
 }

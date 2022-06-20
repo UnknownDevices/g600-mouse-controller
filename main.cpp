@@ -119,10 +119,10 @@ int ends_with(const char *haystack, const char *suffix) {
   return strncmp(suffix, haystack_end, suffix_length) == 0;
 }
 
-// Returns non-0 on error.
+// Returns a non-0 code on error.
 int find_g600(char *path, const LogLevel log_level) {
   DIR *dir;
-  struct dirent *ent;
+  dirent *ent;
   if (!(dir = opendir(kDir))) {
     return 1;
   }
@@ -140,7 +140,7 @@ int find_g600(char *path, const LogLevel log_level) {
   return 2;
 }
 
-// Returns non-0 on error.
+// Returns 1 on error and 0 otherwise.
 int main_loop(const LogLevel log_level) {
   NSILENT_LOG(
       log_level,
@@ -237,6 +237,7 @@ int main_loop(const LogLevel log_level) {
       } else {
         g_shift ^= 1;
       }
+
       continue;
     }
 
@@ -250,15 +251,25 @@ int main_loop(const LogLevel log_level) {
       system(cmd);
     }
   }
-  
+
   close(fd);
   return 0;
 }
 
 int main(int argc, char **argv) {
-  const LogLevel log_level = strcmp(argv[0], "--silent")  ? LogLevel::Silent
-                             : strcmp(argv[0], "--quiet") ? LogLevel::Quiet
-                                                          : LogLevel::Full;
+  LogLevel log_level = LogLevel::Full;
+
+  for (size_t i = 1; argv[i]; ++i) {
+    if (strlen(argv[i]) == 8 && !strcmp(argv[i], "--silent"))
+      log_level = LogLevel::Silent;
+    else if (strlen(argv[i]) == 7 && !strcmp(argv[i], "--quiet"))
+      log_level = LogLevel::Quiet;
+    else {
+      printf("g600-mouse-controller: Error: Unrecognized argument [%s].\n",
+             argv[i]);
+      return 1;
+    }
+  }
 
   return main_loop(log_level);
 }
